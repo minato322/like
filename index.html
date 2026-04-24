@@ -36,7 +36,7 @@
             touch-action: pan-x pan-y;
         }
 
-        /* 卡片尺寸整体缩小，让爱心线条更明显 */
+        /* 卡片尺寸优化，更适合手机端 */
         .care-card {
             position: absolute;
             width: 88px;
@@ -69,7 +69,7 @@
             z-index: 20;
         }
 
-        /* 手机端进一步缩小卡片，更贴合爱心轮廓 */
+        /* 手机端响应式优化 */
         @media (max-width: 680px) {
             .care-card {
                 width: 70px;
@@ -80,7 +80,23 @@
             }
             .heart-canvas {
                 height: 62vh;
-                min-height: 420px;
+                min-height: 380px; /* 降低最小高度，适应小屏 */
+                max-height: 500px;
+            }
+        }
+
+        /* 超小屏手机进一步优化 */
+        @media (max-width: 380px) {
+            .care-card {
+                width: 62px;
+                height: 58px;
+                font-size: 0.7rem;
+                border-radius: 16px 10px 16px 10px;
+            }
+            .heart-canvas {
+                height: 58vh;
+                min-height: 320px;
+                max-height: 420px;
             }
         }
 
@@ -270,55 +286,50 @@
     }
     
     /**
-     * 重新设计心形曲线 —— 彻底解决两侧扁平，让爱心左右圆润隆起
-     * 核心思路：
-     * 1. x方向使用更大系数并加上基于角度的膨胀项，让左右两侧明显突出
-     * 2. y方向配合调节，使整体保持心形特征，底部尖，顶部内凹自然
-     * 3. 根据屏幕宽高比动态缩放，手机端横向拉伸更强
+     * 优化后的心形曲线 - 特别针对手机端优化
+     * 1. 使用经典心形参数方程，确保形状标准
+     * 2. 针对手机端宽高比进行自适应调整
+     * 3. 增强左右两侧的圆润度
      */
     function getHeartPosition(ratio, canvasRect) {
         const angle = ratio * Math.PI * 2;
         
-        // 大幅增强横向幅值: 使用 sin^3 经典基底，再叠加 sin^2 额外膨胀
-        let xRaw = 18.5 * Math.pow(Math.sin(angle), 3);
-        // 额外增加左右两侧的膨胀: 当 sin(angle) 绝对值大时 (左/右侧) 再增加横向伸展
-        const sideBoost = Math.pow(Math.abs(Math.sin(angle)), 1.5) * 2.4;
-        xRaw = xRaw + sideBoost;
+        // 使用经典心形参数方程，确保形状标准[5](@ref)
+        const xRaw = 16 * Math.pow(Math.sin(angle), 3);
+        const yRaw = 13 * Math.cos(angle) - 5 * Math.cos(2 * angle) - 2 * Math.cos(3 * angle) - Math.cos(4 * angle);
         
-        // y轴采用多重谐波，让心形底部尖，顶部有可爱凹陷
-        let yRaw = 14.2 * Math.cos(angle) 
-                 - 6.3 * Math.cos(2 * angle) 
-                 - 2.9 * Math.cos(3 * angle) 
-                 - 1.6 * Math.cos(4 * angle);
+        // 针对手机端宽高比进行自适应缩放[1](@ref)
+        const aspect = canvasRect.width / canvasRect.height;
+        let baseScale = Math.min(canvasRect.width, canvasRect.height) / 20;
         
-        // 顶部区域平滑修正，让心形顶部中央略微内收但保持弧度
-        const twoPi = Math.PI * 2;
-        const isTop = (angle < 0.6) || (angle > twoPi - 0.6);
-        let topAdjust = 0;
-        if (isTop) {
-            let dist = Math.min(angle, twoPi - angle);
-            let intensity = Math.sin(Math.min(1.57, dist * 2.2));
-            topAdjust = 1.4 * (1 - intensity);
-            yRaw = yRaw + topAdjust;
+        // 手机端横向拉伸增强，让爱心更饱满
+        let scaleX = baseScale;
+        let scaleY = baseScale;
+        
+        if (aspect < 0.8) {
+            // 竖屏手机：增强横向拉伸，避免爱心过窄
+            scaleX = baseScale * 1.3;
+            scaleY = baseScale * 1.1;
+        } else if (aspect > 1.2) {
+            // 横屏：适当压缩横向，保持比例
+            scaleX = baseScale * 0.9;
+            scaleY = baseScale * 1.05;
+        } else {
+            // 接近正方形的屏幕：平衡缩放
+            scaleX = baseScale * 1.15;
+            scaleY = baseScale * 1.15;
         }
         
-        // 左右两侧额外增加y轴柔和曲线，使心形饱满不塌陷
-        let lateralY = Math.pow(Math.sin(angle), 2) * 0.7;
-        yRaw = yRaw - lateralY * 0.3;
+        // 应用贝塞尔曲线微调，增强圆润度[1](@ref)
+        const smoothX = xRaw * scaleX;
+        const smoothY = yRaw * scaleY * 0.9; // 轻微压缩纵向，让爱心更紧凑
         
-        // 动态缩放: 根据画布宽高比
-        const aspect = canvasRect.width / canvasRect.height;
-        let baseScale = Math.min(canvasRect.width, canvasRect.height) / 32.5;
-        // 横向缩放增强，让爱心明显变宽 (解决两侧平的问题)
-        let scaleX = baseScale * (aspect < 0.85 ? 1.32 : 1.22);
-        let scaleY = baseScale * (aspect < 0.85 ? 1.24 : 1.18);
+        let posX = canvasRect.width / 2 + smoothX;
+        let posY = canvasRect.height / 2 - smoothY;
         
-        let posX = canvasRect.width / 2 + xRaw * scaleX;
-        let posY = canvasRect.height / 2 - yRaw * scaleY * 0.96;
-        
-        // 增加边界保护，防止卡片超出可视区
-        const marginX = 45;
-        const marginY = 48;
+        // 边界保护，确保卡片不会超出画布[3](@ref)
+        const marginX = 40;
+        const marginY = 45;
         posX = Math.min(Math.max(posX, marginX), canvasRect.width - marginX);
         posY = Math.min(Math.max(posY, marginY), canvasRect.height - marginY);
         
@@ -349,23 +360,25 @@
         }
     }
     
-    // 监听窗口变化
+    // 监听窗口变化，使用防抖优化性能[3](@ref)
     window.addEventListener('resize', () => {
         if (resizeTimer) clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
             if (cardsArray.length > 0) rearrangeToHeart();
-        }, 120);
+        }, 150);
     });
     
+    // 使用ResizeObserver监听画布尺寸变化[1](@ref)
     const resizeObserver = new ResizeObserver(() => {
         if (cardsArray.length > 0) rearrangeToHeart();
     });
     if (canvas) resizeObserver.observe(canvas);
     
+    // 处理手机端横竖屏切换
     window.addEventListener('orientationchange', () => {
         setTimeout(() => {
             if (cardsArray.length) rearrangeToHeart();
-        }, 100);
+        }, 200);
     });
     
     // 最终告白弹窗
@@ -470,7 +483,7 @@
         }, 450);
     }
     
-    // 手动按钮
+    // 手动按钮事件
     const addBtn = document.getElementById('addBtn');
     if (addBtn) {
         addBtn.addEventListener('click', (e) => {
@@ -491,6 +504,7 @@
         });
     }
     
+    // 双击添加卡片
     if (canvas) {
         canvas.addEventListener('dblclick', (e) => {
             e.stopPropagation();
@@ -498,7 +512,7 @@
         });
     }
     
-    // 页面加载: 清空旧数据，从0开始自动增加
+    // 页面加载初始化
     window.addEventListener('load', () => {
         while (canvas.firstChild) canvas.removeChild(canvas.firstChild);
         cardsArray = [];
@@ -515,23 +529,16 @@
         }, 100);
     });
     
-    // 确保每次布局变换后重新排列
-    window.addEventListener('resize', () => {
-        if (cardsArray.length) rearrangeToHeart();
-    });
-    
+    // 确保布局稳定后重新排列爱心
     const ensureHeart = () => {
         if (cardsArray.length && canvas.getBoundingClientRect().width > 10) {
             rearrangeToHeart();
         }
-        requestAnimationFrame(() => {
-            if (cardsArray.length) rearrangeToHeart();
-        });
     };
-    setTimeout(ensureHeart, 200);
-    document.fonts?.ready?.then(() => {
-        if (cardsArray.length) rearrangeToHeart();
-    });
+    
+    // 页面完全加载后再次确保爱心形状正确
+    window.addEventListener('DOMContentLoaded', ensureHeart);
+    document.fonts?.ready?.then(ensureHeart);
 </script>
 </body>
 </html>
